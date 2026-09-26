@@ -119,19 +119,35 @@
                     <div class="settings-success" id="workRestSuccess"></div>
                 </div>
 
-                <!-- 数据迁移 -->
+                <!-- 关于与联系 -->
                 <div class="settings-group">
-                    <label>数据迁移</label>
-                    <p class="hint-text">生成纯数字编码，完整迁移所有数据。<br>编码包含：昵称、设置、循环开关、总专注分钟数、全部历史记录。<br>编码生成后 <strong>2 小时内有效</strong>。</p>
-                    <button class="settings-btn" id="btnExportData" style="background:#2196F3; color:#fff; margin-bottom:8px;">📤 生成数字编码</button>
-                    <textarea id="importExportArea" class="settings-input" rows="3"
-                        placeholder="点击上方按钮生成编码；或在此粘贴编码后点击下方导入"
-                        style="resize:vertical; font-size:13px; font-family:monospace; min-height:80px; word-break:break-all;"></textarea>
-                    <div class="code-info" id="codeInfo"></div>
-                    <button class="settings-btn" id="btnImportData" style="background:#4CAF50; color:#fff;">📥 导入数据</button>
-                    <button class="settings-btn" id="btnCopyCode" style="background:#f5f5f5; color:#555; margin-top:8px;">📋 复制编码</button>
-                    <div class="settings-error" id="dataError"></div>
-                    <div class="settings-success" id="dataSuccess"></div>
+                    <label>关于与联系</label>
+                    <div class="contact-list">
+                        <a class="contact-item" href="https://github.com/lpjsw114514-ui/fanqz23" target="_blank" rel="noopener">
+                            <span class="contact-icon">💻</span>
+                            <div class="contact-content">
+                                <div class="contact-label">GitHub 源码</div>
+                                <div class="contact-value" id="githubValue">https://github.com/lpjsw114514-ui/fanqz23</div>
+                            </div>
+                            <button class="copy-mini" data-copy="https://github.com/lpjsw114514-ui/fanqz23" type="button">复制</button>
+                        </a>
+                        <div class="contact-item">
+                            <span class="contact-icon">💬</span>
+                            <div class="contact-content">
+                                <div class="contact-label">官方交流群</div>
+                                <div class="contact-value">1125056057</div>
+                            </div>
+                            <button class="copy-mini" data-copy="1125056057" type="button">复制</button>
+                        </div>
+                        <div class="contact-item">
+                            <span class="contact-icon">📧</span>
+                            <div class="contact-content">
+                                <div class="contact-label">官方邮箱</div>
+                                <div class="contact-value">hail@hotmail.com</div>
+                            </div>
+                            <button class="copy-mini" data-copy="hail@hotmail.com" type="button">复制</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
