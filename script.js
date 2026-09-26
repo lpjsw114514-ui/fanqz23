@@ -9,8 +9,6 @@
     const CYCLE_KEY = 'pomodoro_auto_cycle';
 
     const DEFAULT_SETTINGS = { workMinutes: 25, restMinutes: 5 };
-    const BASE_TIME = new Date('2020-01-01T00:00:00Z').getTime();
-    const CODE_VALID_MS = 2 * 60 * 60 * 1000; // 2 小时
 
     let nickname = localStorage.getItem(NICKNAME_KEY) || '专注者';
     let records = [];
@@ -96,15 +94,6 @@
     const btnSaveWorkRest = document.getElementById('btnSaveWorkRest');
     const workRestError = document.getElementById('workRestError');
     const workRestSuccess = document.getElementById('workRestSuccess');
-
-    // 导入/导出 DOM
-    const btnExportData = document.getElementById('btnExportData');
-    const btnImportData = document.getElementById('btnImportData');
-    const btnCopyCode = document.getElementById('btnCopyCode');
-    const importExportArea = document.getElementById('importExportArea');
-    const codeInfo = document.getElementById('codeInfo');
-    const dataError = document.getElementById('dataError');
-    const dataSuccess = document.getElementById('dataSuccess');
 
     const RING_CIRCUMFERENCE = 785.4;
     let successTimeout = null;
@@ -290,292 +279,21 @@
         updateCycleButton();
     });
 
-    // ==================== 纯数字编码：导入/导出 ====================
-
-    function writeVarint(bytes, n) {
-        n = n >>> 0;
-        while (n >= 0x80) {
-            bytes.push((n & 0x7F) | 0x80);
-            n >>>= 7;
-        }
-        bytes.push(n);
-    }
-
-    function readVarint(bytes, pos) {
-        let result = 0;
-        let shift = 0;
-        let b;
-        do {
-            if (pos >= bytes.length) throw new Error('编码不完整');
-            b = bytes[pos++];
-            result |= (b & 0x7F) << shift;
-            shift += 7;
-            if (shift > 35) throw new Error('varint 过长');
-        } while (b & 0x80);
-        return { value: result >>> 0, pos };
-    }
-
-    function writeVarintSigned(bytes, n) {
-        const zigzag = ((n << 1) ^ (n >> 31)) >>> 0;
-        writeVarint(bytes, zigzag);
-    }
-
-    function readVarintSigned(bytes, pos) {
-        const r = readVarint(bytes, pos);
-        const value = (r.value >>> 1) ^ -(r.value & 1);
-        return { value, pos: r.pos };
-    }
-
-    function bytesToDecimalString(bytes) {
-        let n = 0n;
-        for (const b of bytes) {
-            n = (n << 8n) | BigInt(b);
-        }
-        return n.toString();
-    }
-
-    function decimalStringToBytes(str) {
-        if (!/^\d+$/.test(str)) throw new Error('编码格式错误，只允许数字');
-        let n = BigInt(str);
-        if (n === 0n) throw new Error('编码无效');
-        const bytes = [];
-        while (n > 0n) {
-            bytes.unshift(Number(n & 0xFFn));
-            n >>= 8n;
-        }
-        return bytes;
-    }
-
-    // 编码：完整记录 + 时间戳
-    function encodeData() {
-        const bytes = [];
-        bytes.push(1); // 版本
-
-        let flags = 0;
-        if (autoCycle) flags |= 1;
-        bytes.push(flags);
-
-        bytes.push(settings.workMinutes & 0xFF);
-        bytes.push(settings.restMinutes & 0xFF);
-
-        // 总专注分钟数（根据记录重新计算，保证一致）
-        const totalMinutes = records.reduce((sum, r) => sum + (r.minutes || 0), 0);
-        writeVarint(bytes, totalMinutes);
-
-        // 导出时间戳
-        writeVarint(bytes, Date.now());
-
-        // 昵称
-        const nickBytes = new TextEncoder().encode(nickname.slice(0, 20));
-        const nickLen = Math.min(nickBytes.length, 60);
-        bytes.push(nickLen);
-        for (let i = 0; i < nickLen; i++) bytes.push(nickBytes[i]);
-
-        // 全部记录，按时间升序
-        const sorted = [...records].sort((a, b) => a.timestamp - b.timestamp);
-        writeVarint(bytes, sorted.length);
-
-        let prevMinutes = 0;
-        for (const r of sorted) {
-            const minFromBase = Math.floor((r.timestamp - BASE_TIME) / 60000);
-            const delta = minFromBase - prevMinutes;
-            prevMinutes = minFromBase;
-            writeVarintSigned(bytes, delta);
-            bytes.push(Math.min(255, r.minutes) & 0xFF);
-        }
-
-        return bytesToDecimalString(bytes);
-    }
-
-    // 解码：校验有效期
-    function decodeData(code) {
-        const bytes = decimalStringToBytes(code);
-        let pos = 0;
-
-        const version = bytes[pos++];
-        if (version !== 1) throw new Error('不支持的编码版本');
-
-        const flags = bytes[pos++];
-        const decodedAutoCycle = (flags & 1) === 1;
-
-        const workMinutes = bytes[pos++];
-        const restMinutes = bytes[pos++];
-        if (workMinutes < 1 || workMinutes > 180) throw new Error('工作分钟数异常');
-        if (restMinutes < 1 || restMinutes > 60) throw new Error('休息分钟数异常');
-
-        const r1 = readVarint(bytes, pos);
-        const decodedTotalMinutes = r1.value;
-        pos = r1.pos;
-
-        const r2 = readVarint(bytes, pos);
-        const exportTime = r2.value;
-        pos = r2.pos;
-
-        // 有效期检查
-        const now = Date.now();
-        if (now - exportTime > CODE_VALID_MS) {
-            throw new Error('编码已过期（超过2小时），请重新生成');
-        }
-        if (exportTime > now + 60000) {
-            throw new Error('编码时间异常');
-        }
-
-        const nickLen = bytes[pos++];
-        if (nickLen > 120) throw new Error('昵称长度异常');
-        const nickBytes = bytes.slice(pos, pos + nickLen);
-        pos += nickLen;
-        const decodedNickname = new TextDecoder().decode(new Uint8Array(nickBytes));
-
-        const r3 = readVarint(bytes, pos);
-        const recordCount = r3.value;
-        pos = r3.pos;
-        if (recordCount > 10000) throw new Error('记录数量异常');
-
-        const decodedRecords = [];
-        let prevMinutes = 0;
-        for (let i = 0; i < recordCount; i++) {
-            const r = readVarintSigned(bytes, pos);
-            pos = r.pos;
-            const delta = r.value;
-            const minFromBase = prevMinutes + delta;
-            prevMinutes = minFromBase;
-            const timestamp = BASE_TIME + minFromBase * 60000;
-            const minutes = bytes[pos++];
-            decodedRecords.push({
-                date: new Date(timestamp).toISOString(),
-                timestamp,
-                minutes
+    // ==================== 联系方式复制 ====================
+    document.querySelectorAll('.copy-mini').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = btn.dataset.copy;
+            if (!text) return;
+            copyToClipboard(text).then(() => {
+                const original = btn.textContent;
+                btn.textContent = '已复制';
+                setTimeout(() => { btn.textContent = original; }, 1500);
+            }).catch(() => {
+                alert('复制失败，请手动复制：' + text);
             });
-        }
-
-        return {
-            nickname: decodedNickname,
-            totalMinutes: decodedTotalMinutes,
-            settings: { workMinutes, restMinutes },
-            autoCycle: decodedAutoCycle,
-            records: decodedRecords
-        };
-    }
-
-    function updateCodeInfo(code) {
-        const len = code ? code.length : 0;
-        if (len === 0) {
-            codeInfo.textContent = '';
-            codeInfo.className = 'code-info';
-            return;
-        }
-        codeInfo.className = 'code-info ok';
-        codeInfo.textContent = `编码长度：${len} 位 · 有效期 2 小时`;
-    }
-
-    // 导出
-    btnExportData.addEventListener('click', () => {
-        try {
-            // 同步总分钟数
-            const total = records.reduce((sum, r) => sum + (r.minutes || 0), 0);
-            saveTotalMinutes(total);
-            const code = encodeData();
-            importExportArea.value = code;
-            updateCodeInfo(code);
-            dataError.textContent = '';
-            dataSuccess.textContent = '编码已生成，有效期 2 小时，可点击复制';
-            copyToClipboard(code).then(() => {
-                dataSuccess.textContent = '编码已生成并复制到剪贴板';
-            }).catch(() => {});
-            setTimeout(() => { dataSuccess.textContent = ''; }, 3000);
-        } catch (e) {
-            dataError.textContent = '导出失败：' + e.message;
-            dataSuccess.textContent = '';
-        }
-    });
-
-    // 复制
-    btnCopyCode.addEventListener('click', () => {
-        const code = importExportArea.value.trim();
-        if (!code) {
-            dataError.textContent = '暂无编码可复制';
-            dataSuccess.textContent = '';
-            return;
-        }
-        copyToClipboard(code).then(() => {
-            dataError.textContent = '';
-            dataSuccess.textContent = '已复制到剪贴板';
-            setTimeout(() => { dataSuccess.textContent = ''; }, 2000);
-        }).catch(() => {
-            dataError.textContent = '复制失败，请手动选择复制';
-            dataSuccess.textContent = '';
         });
-    });
-
-    // 导入
-    btnImportData.addEventListener('click', () => {
-        const code = importExportArea.value.trim();
-        if (!code) {
-            dataError.textContent = '请先粘贴导入编码';
-            dataSuccess.textContent = '';
-            return;
-        }
-        if (!/^\d+$/.test(code)) {
-            dataError.textContent = '编码格式错误，只允许数字';
-            dataSuccess.textContent = '';
-            return;
-        }
-        try {
-            const data = decodeData(code);
-            if (!confirm('导入将覆盖当前所有数据（昵称、设置、记录、等级），确定继续吗？')) {
-                return;
-            }
-
-            nickname = data.nickname || '专注者';
-            localStorage.setItem(NICKNAME_KEY, nickname);
-
-            settings = {
-                workMinutes: data.settings.workMinutes,
-                restMinutes: data.settings.restMinutes
-            };
-            saveSettings();
-            state.workMinutes = settings.workMinutes;
-            state.restMinutes = settings.restMinutes;
-
-            autoCycle = data.autoCycle;
-            saveCycle();
-
-            // 根据导入的记录重新计算总分钟数，确保准确
-            const total = data.records.reduce((sum, r) => sum + (r.minutes || 0), 0);
-            saveTotalMinutes(total);
-
-            records = data.records.map(r => ({
-                date: r.date,
-                minutes: r.minutes,
-                timestamp: r.timestamp
-            }));
-            saveRecords();
-
-            state.mode = 'work';
-            state.totalSeconds = settings.workMinutes * 60;
-            state.totalDurationMs = settings.workMinutes * 60 * 1000;
-            state.remainingSeconds = state.totalSeconds;
-            state.isRunning = false;
-            state.isPaused = false;
-            stopTimerInterval();
-
-            updateAllUI();
-            updateStatsAndRecords();
-            loadSettingsToInputs();
-            updateCodeInfo('');
-            dataError.textContent = '';
-            dataSuccess.textContent = '数据导入成功！';
-            showSuccess('数据导入成功', '历史数据已完整恢复');
-            setTimeout(() => { dataSuccess.textContent = ''; }, 3000);
-        } catch (e) {
-            dataError.textContent = '导入失败：' + e.message;
-            dataSuccess.textContent = '';
-        }
-    });
-
-    importExportArea.addEventListener('input', () => {
-        const code = importExportArea.value.trim();
-        updateCodeInfo(code);
     });
 
     function copyToClipboard(text) {
@@ -869,9 +587,6 @@
         nicknameInput.value = nickname;
         nicknameError.textContent = '';
         nicknameSuccess.textContent = '';
-        dataError.textContent = '';
-        dataSuccess.textContent = '';
-        updateCodeInfo(importExportArea.value.trim());
     }
 
     navBtns.forEach(btn => {
