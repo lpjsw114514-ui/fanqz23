@@ -27,7 +27,7 @@
 
 - **GitHub 源码**：<https://github.com/lpjsw114514-ui/fanqz23>
 - **官方QQ交流群**：`1125056057`
-- **开发者邮箱**：`hail@hotmail.com`
+- **开发者邮箱**：`kskbl114514@hotmail.com`
 
 欢迎提交 Issue 或 Pull Request，也欢迎加入交流群反馈建议。
 
